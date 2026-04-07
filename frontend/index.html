@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <title>Smart BIT Campus Bus Booking</title>
+  </head>
+  <body>
+    <!--
+      Online Campus Bus Booking System - Full Prompt
+
+      Objective
+      Build a smart Bus Seat Booking System for campus transportation at
+      Bannari Amman Institute of Technology.
+
+      Core flow
+      Login -> Choose Bus -> Select Seat -> Confirm -> Track Bus
+
+      Step 1: Authentication (Google Sign-In)
+      - Use Firebase Authentication with Google provider.
+      - After successful login, redirect to Dashboard.
+      - Display user details:
+        - User Name
+        - Email
+        - Profile Picture
+
+      Step 2: Bus Selection Page
+      Show clickable cards/buttons for:
+      - BIT01 - Tiruppur -> College
+      - BIT02 - Gobichettipalayam -> College
+      - BIT03 - Erode -> College
+      - BIT04 - Salem -> College
+      - BIT05 - Karur -> College
+
+      Each card should show route details and open seat booking view on click.
+
+      Step 3: Seat Slot Booking
+      - Show seat layout in a grid (example: 5 x 10).
+      - Total seats: 50.
+      - Each seat has number and status.
+
+      Seat colors
+      - Green: Booked
+      - White: Available
+      - Blue: Selected by current user
+
+      Step 4: Booking Logic
+      - User clicks an available (white) seat.
+      - Seat becomes selected (blue).
+      - User clicks Confirm Booking.
+
+      After booking
+      - Seat turns Green.
+      - Store booking in Firebase Firestore.
+      - Prevent double booking using transaction-safe updates.
+
+      Step 5: Location Tracking
+      After booking, allocate/show route from selected city to college.
+      Example: Tiruppur -> BIT.
+
+      Display
+      - Start Point
+      - Current Location (optional)
+      - Destination (College)
+
+      Step 6: Firebase Data Structure Example
+      buses: {
+        BIT01: {
+          route: "Tiruppur to College",
+          seats: {
+            "1": "available",
+            "2": "booked",
+            "3": "available"
+          }
+        }
+      }
+
+      Step 7: Real-Time Updates
+      - Use Firestore real-time listeners.
+      - If one user books a seat, all users instantly see seat -> Green.
+
+      Step 8: Pages Flow
+      - Login Page (Google Sign-In)
+      - Dashboard
+      - Bus Selection Page
+      - Seat Booking Page
+      - Confirmation Page
+
+      Bonus Features
+      - My Booking
+      - Cancel Booking
+      - Admin Panel (add buses, reset seats)
+      - Live Bus Tracking (Google Maps API)
+      - Notifications
+
+      Recommended Stack
+      - Frontend: React + Vite
+      - Backend: Firebase Auth + Firestore
+      - Optional API: Google Maps
+
+      Expected Outcome
+      A real-time booking web app where students reserve seats safely,
+      see instant updates, and get route/confirmation details.
+
+      DRY RUN (Execution Example)
+
+      Scenario
+      Student logs in and books BIT01 seat 3.
+
+      1) Login
+      - User clicks Google Sign-In.
+      - Firebase returns profile (name/email/photo).
+      - App redirects to Dashboard.
+
+      2) Dashboard
+      - User details are shown.
+      - User clicks Select Bus.
+
+      3) Bus Selection
+      - User clicks BIT01 (Tiruppur -> College).
+
+      4) Seat Layout
+      - App loads seat map from Firestore.
+      - Example current state:
+        - Seat 2 = booked
+        - Seat 10 = booked
+        - Others = available
+
+      5) Seat Selection
+      - User clicks seat 3.
+      - Seat 3 becomes selected (blue).
+
+      6) Confirm Booking
+      - App runs Firestore transaction:
+        - Re-check seat 3 status.
+        - If available, set to booked.
+        - Create booking record for user.
+
+      7) Real-time Sync
+      - All active clients receive snapshot update.
+      - Seat 3 changes to Green everywhere.
+
+      8) Confirmation
+      - Show bus number, seat number, and route details.
+
+      Conflict case (important)
+      - User A and User B both click seat 5.
+      - User A confirms first -> success.
+      - User B confirms next -> transaction fails with
+        "Seat already booked, choose another".
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
