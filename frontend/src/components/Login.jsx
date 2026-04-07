@@ -1,6 +1,6 @@
 import { signInWithPopup } from 'firebase/auth'
 import { auth, provider } from '../firebase'
-import apiService from '../services/api'
+import { apiService } from '../services/api'
 
 export default function Login({ onLogin }) {
   const [error, setError] = useState('')

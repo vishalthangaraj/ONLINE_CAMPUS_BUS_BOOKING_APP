@@ -3,7 +3,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import Login from './components/Login'
 import Dashboard from './components/Dashboard'
 import { auth } from './firebase'
-import apiService from './services/api'
+import { apiService } from './services/api'
 
 function readStoredUser() {
   try {
