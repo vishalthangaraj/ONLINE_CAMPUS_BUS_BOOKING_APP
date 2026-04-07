@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
       default: 'student',
     },
     googleId: { type: String },
+    photoURL: { type: String },
     passwordHash: { type: String },
     phone: { type: String },
     department: { type: String },

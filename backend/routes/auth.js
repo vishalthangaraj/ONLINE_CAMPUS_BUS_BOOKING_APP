@@ -70,7 +70,7 @@ router.post('/login', async (req, res) => {
 
 router.post('/google', async (req, res) => {
   try {
-    const { email, name, googleId } = req.body;
+    const { email, name, googleId, photoURL } = req.body;
     if (!email || !googleId) {
       return res.status(400).json({ message: 'Missing google user info' });
     }
@@ -84,11 +84,14 @@ router.post('/google', async (req, res) => {
         name,
         email,
         googleId,
+        photoURL,
         role: validRoles.includes(requestedRole) ? requestedRole : 'student',
       });
-    } else if (!user.googleId) {
-      user.googleId = googleId;
-      await user.save();
+    } else {
+      let changed = false;
+      if (!user.googleId) { user.googleId = googleId; changed = true; }
+      if (photoURL && user.photoURL !== photoURL) { user.photoURL = photoURL; changed = true; }
+      if (changed) await user.save();
     }
 
     const token = signToken(user);
