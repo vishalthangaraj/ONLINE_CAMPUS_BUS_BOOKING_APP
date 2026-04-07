@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: campus-bus-booking-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0

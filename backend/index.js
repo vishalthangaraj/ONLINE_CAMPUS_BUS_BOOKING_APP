@@ -16,6 +16,7 @@ const createBookingRouter = require('./routes/bookings');
 const busesRoutes = require('./routes/buses');
 const tripsRoutes = require('./routes/trips');
 const adminRoutes = require('./routes/admin');
+const shimRoutes = require('./routes/shim');
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
@@ -68,6 +69,7 @@ async function main() {
   app.use('/api/safety', safetyRoutes);
   app.use('/api/attendance', attendanceRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/shim', shimRoutes(io));
 
   // 404 handler: ensures every unknown path gets a valid JSON response
   app.use((req, res) => {

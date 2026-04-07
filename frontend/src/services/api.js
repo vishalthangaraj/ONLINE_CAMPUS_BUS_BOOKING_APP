@@ -52,4 +52,13 @@ export const apiService = {
   getAllBookings: () => axiosInstance.get('/admin/bookings'),
 }
 
+export const shimApiService = {
+  seedBuses: () => axiosInstance.post('/shim/seed'),
+  getBuses: () => axiosInstance.get('/shim/buses'),
+  getUserBookings: (userId) => axiosInstance.get(`/shim/bookings/user?userId=${userId}`),
+  createBooking: (data) => axiosInstance.post('/shim/bookings', data),
+  getMockState: (date) => axiosInstance.get(`/shim/mock-state/${date}`),
+  updateMockState: (date, data) => axiosInstance.post(`/shim/mock-state/${date}`, data)
+}
+
 export default axiosInstance

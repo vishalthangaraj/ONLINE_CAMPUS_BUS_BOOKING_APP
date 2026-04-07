@@ -1,15 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  runTransaction,
-  serverTimestamp,
-  where,
-} from 'firebase/firestore'
-import { db, seedBusesIfMissing } from '../firebase'
+import { io } from 'socket.io-client'
+import { shimApiService } from '../services/api'
 import { CAMPUS_BUSES } from '../data/campusBuses'
 
 const PAGE = {
@@ -126,28 +117,7 @@ const writeLocalBookings = (bookings) => {
 }
 
 const getBookingErrorMessage = (err) => {
-  const code = String(err?.code || '').toLowerCase()
-  const rawMessage = String(err?.message || '')
-  const message = rawMessage.toLowerCase()
-
-  if (code.includes('failed-precondition') || message.includes('firestore.googleapis.com')) {
-    return 'Firestore API is disabled for this Firebase project. Enable Firestore API in Google Cloud Console, then retry booking in a few minutes.'
-  }
-
-  if (code.includes('permission-denied')) {
-    return 'Permission denied while booking. Please log out, log in again with Google, and retry.'
-  }
-
-  return rawMessage || 'Booking failed. Please try again.'
-}
-
-const withFastTimeout = (promise, ms = 3500) => {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => {
-      reject(new Error('firestore.googleapis.com timeout'))
-    }, ms))
-  ])
+  return err?.response?.data?.error || err.message || 'Booking failed. Please try again.'
 }
 
 export default function Dashboard({ user, onLogout }) {
@@ -240,79 +210,59 @@ export default function Dashboard({ user, onLogout }) {
     return Array.from({ length: totalSeats }, (_, index) => `S${index + 1}`)
   }, [selectedBus?.totalSeats, selectedBus?.isMock])
 
-  const myBookingQuery = useMemo(
-    () => query(collection(db, 'bookings'), where('userId', '==', user?.uid || '')),
-    [user?.uid]
-  )
-
   useEffect(() => {
-    let unsubscribe
-
     const init = async () => {
       setLoading(true)
       setError('')
-
       try {
-        await seedBusesIfMissing()
-        unsubscribe = onSnapshot(collection(db, 'buses'), (snapshot) => {
-          const next = snapshot.docs.map((item) => {
-            const data = item.data()
-            const normalized = normalizeBusNumber(data.name || item.id)
-            return {
-              id: item.id,
-              ...data,
-              name: normalized,
-              fromCity: data.fromCity || 'Tiruppur',
-              toCity: data.toCity || 'Erode',
-              route: `${data.fromCity || 'Tiruppur'} -> ${data.toCity || 'Erode'}`,
-              routePoints: data.routePoints?.length ? data.routePoints : TRACKER_ROUTE,
-            }
-          })
-
-          setBuses(next)
-        })
+        await shimApiService.seedBuses()
+        const response = await shimApiService.getBuses()
+        const mapped = response.data.map((item) => ({
+          id: item._id,
+          ...item,
+          routePoints: TRACKER_ROUTE,
+        }))
+        setBuses(mapped)
       } catch (err) {
-        console.error(err)
-        if (isFirestoreDisabledError(err)) {
-          setFirestoreFallbackMode(true)
-          setBuses(CAMPUS_BUSES.map((bus) => ({ ...bus })))
-          setError('Firestore API is disabled. Running in local booking mode for this browser session.')
-        } else {
-          setError('Unable to load buses. Please check your Firebase setup and try again.')
-        }
+        setFirestoreFallbackMode(true)
+        setBuses(CAMPUS_BUSES.map((bus) => ({ ...bus })))
+        setError('Running in local booking mode fallback.')
       } finally {
         setLoading(false)
       }
     }
-
     init()
-
-    return () => {
-      if (unsubscribe) unsubscribe()
-    }
+    
+    const socket = io(import.meta.env.VITE_WS_URL || 'http://localhost:4000')
+    socket.on('buses-update', (updatedBuses) => {
+      const mapped = updatedBuses.map((item) => ({
+        id: item._id, ...item, routePoints: TRACKER_ROUTE,
+      }))
+      setBuses(mapped)
+    })
+    socket.on('mock-state-update', (data) => {
+      setMockBusSeats(data.seats || {})
+    })
+    return () => socket.disconnect()
   }, [])
 
   useEffect(() => {
     if (!search?.travelDate) return undefined
-
     if (firestoreFallbackMode) {
       setMockBusSeats(readLocalMockSeats(search.travelDate))
       return undefined
     }
-
-    const unsubMock = onSnapshot(doc(db, 'buses', `mock_bus_state_${search.travelDate}`), (docSnap) => {
-      if (docSnap.exists()) {
-        setMockBusSeats(docSnap.data().seats || {})
-      } else {
-        setMockBusSeats({})
-      }
-    })
-    return () => unsubMock()
+    const fetchMock = async () => {
+      try {
+        const res = await shimApiService.getMockState(search.travelDate)
+        setMockBusSeats(res.data || {})
+      } catch (err) { }
+    }
+    fetchMock()
   }, [firestoreFallbackMode, search.travelDate])
 
   useEffect(() => {
     if (!user?.uid) return undefined
-
     if (firestoreFallbackMode) {
       const history = readLocalBookings()
         .filter((item) => item.userId === user.uid)
@@ -320,17 +270,14 @@ export default function Dashboard({ user, onLogout }) {
       setBookingHistory(history)
       return undefined
     }
-
-    const unsubscribe = onSnapshot(myBookingQuery, (snapshot) => {
-      const history = snapshot.docs
-        .map((item) => ({ bookingId: item.id, ...item.data() }))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-
-      setBookingHistory(history)
-    })
-
-    return () => unsubscribe()
-  }, [firestoreFallbackMode, myBookingQuery, user?.uid])
+    const fetchHistory = async () => {
+      try {
+        const res = await shimApiService.getUserBookings(user.uid)
+        setBookingHistory(res.data || [])
+      } catch (err) { }
+    }
+    fetchHistory()
+  }, [firestoreFallbackMode, user?.uid, page, activeTab])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -397,83 +344,49 @@ export default function Dashboard({ user, onLogout }) {
 
       if (!useLocalFallback && !selectedBus.isMock) {
         try {
-          const busRef = doc(db, 'buses', selectedBus.id)
-          await withFastTimeout((async () => {
-            await runTransaction(db, async (transaction) => {
-              const busSnapshot = await transaction.get(busRef)
-              if (!busSnapshot.exists()) throw new Error('The selected bus was not found.')
-              const busData = busSnapshot.data()
-              const seats = { ...(busData.seats || {}) }
-              for (const seatNo of selectedSeats) {
-                const seatState = seats[seatNo] || { status: 'available' }
-                if (seatState.status === 'booked') {
-                  throw new Error(`Seat ${seatNo} is already booked.`)
-                }
-                seats[seatNo] = { status: 'booked', bookedBy: user.uid, bookedEmail: user.email || '' }
-              }
-              transaction.update(busRef, { seats, updatedAt: Date.now() })
-            })
-
-            await addDoc(collection(db, 'bookings'), {
-              userId: user.uid,
-              userName: user.name || '',
-              email: user.email || '',
-              busId: selectedBus.id,
-              busName: selectedBus.name,
-              route: selectedBus.route,
-              fromCity: selectedBus.fromCity,
-              toCity: selectedBus.toCity,
-              routePoints: selectedBus.routePoints || TRACKER_ROUTE,
-              seatNumber: selectedSeats.join(', '),
-              travelDate: search.travelDate,
-              departureTime: DEPARTURE_TIMES[selectedBus.name] || DEPARTURE_TIMES.BIT1,
-              status: 'booked',
-              createdAt: serverTimestamp(),
-            })
-          })())
-        } catch (firestoreErr) {
-          if (!isFirestoreDisabledError(firestoreErr)) throw firestoreErr;
-          useLocalFallback = true;
-          setFirestoreFallbackMode(true);
+          await shimApiService.createBooking({
+            userId: user.uid,
+            userName: user.name || '',
+            email: user.email || '',
+            busId: selectedBus.id,
+            busName: selectedBus.name,
+            route: selectedBus.route,
+            fromCity: selectedBus.fromCity,
+            toCity: selectedBus.toCity,
+            seatNumber: selectedSeats.join(', '),
+            travelDate: search.travelDate,
+            departureTime: DEPARTURE_TIMES[selectedBus.name] || DEPARTURE_TIMES.BIT1,
+            status: 'booked'
+          })
+        } catch (err) {
+          if (!err.response && !err.message.includes('already')) {
+            useLocalFallback = true; setFirestoreFallbackMode(true);
+          } else throw err;
         }
       } else if (!useLocalFallback && selectedBus.isMock) {
         try {
-          const mockDocRef = doc(db, 'buses', `mock_bus_state_${search.travelDate}`)
-          await withFastTimeout((async () => {
-            await runTransaction(db, async (transaction) => {
-              const snap = await transaction.get(mockDocRef)
-              const data = snap.exists() ? snap.data() : { seats: {} }
-              const seatsData = { ...data.seats }
-              for (const seatNo of selectedSeats) {
-                if ((seatsData[selectedBus.id] || []).includes(seatNo)) {
-                  throw new Error(`Seat ${seatNo} on ${selectedBus.name} is already booked.`)
-                }
-              }
-              seatsData[selectedBus.id] = [...(seatsData[selectedBus.id] || []), ...selectedSeats]
-              transaction.set(mockDocRef, { seats: seatsData }, { merge: true })
-            })
-
-            await addDoc(collection(db, 'bookings'), {
-              userId: user.uid,
-              userName: user.name || '',
-              email: user.email || '',
-              busId: selectedBus.id,
-              busName: selectedBus.name,
-              route: selectedBus.route,
-              fromCity: selectedBus.fromCity,
-              toCity: selectedBus.toCity,
-              routePoints: TRACKER_ROUTE,
-              seatNumber: selectedSeats.join(', '),
-              travelDate: search.travelDate,
-              departureTime: DEPARTURE_TIMES.BIT1,
-              status: 'booked',
-              createdAt: serverTimestamp(),
-            })
-          })())
-        } catch (firestoreErr) {
-          if (!isFirestoreDisabledError(firestoreErr)) throw firestoreErr;
-          useLocalFallback = true;
-          setFirestoreFallbackMode(true);
+          await shimApiService.updateMockState(search.travelDate, {
+            busId: selectedBus.id,
+            selectedSeats: selectedSeats
+          })
+          await shimApiService.createBooking({
+            userId: user.uid,
+            userName: user.name || '',
+            email: user.email || '',
+            busId: selectedBus.id,
+            busName: selectedBus.name,
+            route: selectedBus.route,
+            fromCity: selectedBus.fromCity,
+            toCity: selectedBus.toCity,
+            seatNumber: selectedSeats.join(', '),
+            travelDate: search.travelDate,
+            departureTime: DEPARTURE_TIMES.BIT1,
+            status: 'booked'
+          })
+        } catch (err) {
+          if (!err.response && !err.message.includes('already')) {
+            useLocalFallback = true; setFirestoreFallbackMode(true);
+          } else throw err;
         }
       }
 
