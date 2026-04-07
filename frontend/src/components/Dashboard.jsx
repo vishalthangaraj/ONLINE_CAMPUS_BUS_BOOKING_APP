@@ -524,8 +524,9 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
       if (onUserUpdate) onUserUpdate(updatedUser)
       
     } catch (err) {
-      console.error(err)
-      setError(err?.response?.data?.message || 'Failed to update profile.')
+      console.error('Profile Update Error:', err)
+      const msg = err?.response?.data?.message || err?.response?.data?.error || err.message || 'Failed to update profile.'
+      setError(msg)
     } finally {
       setLoading(false)
     }
