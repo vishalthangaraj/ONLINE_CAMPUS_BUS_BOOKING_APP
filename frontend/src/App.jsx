@@ -53,7 +53,7 @@ function App() {
     return <Login onLogin={setUser} />
   }
 
-  return <Dashboard user={user} onLogout={handleLogout} />
+  return <Dashboard user={user} onLogout={handleLogout} onUserUpdate={setUser} />
 }
 
 export default App

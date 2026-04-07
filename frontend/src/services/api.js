@@ -27,6 +27,8 @@ export const apiService = {
   // Auth endpoints
   login: (payload) => axiosInstance.post('/auth/login', payload),
   googleLogin: (payload) => axiosInstance.post('/auth/google', payload),
+  getProfile: () => axiosInstance.get('/auth/profile'),
+  updateProfile: (payload) => axiosInstance.patch('/auth/profile', payload),
 
   // Buses endpoints
   getBuses: () => axiosInstance.get('/buses'),

@@ -13,6 +13,8 @@ const TABS = {
   HISTORY: 'history',
   SCHEDULE: 'schedule',
   SUPPORT: 'support',
+  TRACKER: 'tracker',
+  PROFILE: 'profile',
 }
 
 const getTodayDate = () => {
@@ -120,11 +122,21 @@ const getBookingErrorMessage = (err) => {
   return err?.response?.data?.error || err.message || 'Booking failed. Please try again.'
 }
 
-export default function Dashboard({ user, onLogout }) {
+export default function Dashboard({ user, onLogout, onUserUpdate }) {
   const [page, setPage] = useState(PAGE.DASHBOARD)
   const [activeTab, setActiveTab] = useState(TABS.HISTORY)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+  
+  // Profile State
+  const [profileData, setProfileData] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    department: user?.department || '',
+    year: user?.year || '',
+  })
   const [supportMessage, setSupportMessage] = useState('')
   const [supportSent, setSupportSent] = useState(false)
   const [search, setSearch] = useState(DEFAULT_SEARCH)
@@ -286,6 +298,27 @@ export default function Dashboard({ user, onLogout }) {
     }
     fetchHistory()
   }, [firestoreFallbackMode, user?.uid, page, activeTab])
+
+  // Fetch full profile info when activeTab becomes PROFILE
+  useEffect(() => {
+    if (activeTab === TABS.PROFILE) {
+      const fetchProfile = async () => {
+        try {
+          const res = await apiService.getProfile()
+          setProfileData({
+            name: res.data.name || '',
+            email: res.data.email || '',
+            phone: res.data.phone || '',
+            department: res.data.department || '',
+            year: res.data.year || '',
+          })
+        } catch (err) {
+          console.error('Failed to fetch profile', err)
+        }
+      }
+      fetchProfile()
+    }
+  }, [activeTab])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -471,6 +504,28 @@ export default function Dashboard({ user, onLogout }) {
     } catch (err) {
       console.error(err)
       setError(err?.response?.data?.error || 'Cancellation failed.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setSuccessMsg('')
+    try {
+      const res = await apiService.updateProfile(profileData)
+      setSuccessMsg('Profile updated successfully!')
+      
+      // Update local user state
+      const updatedUser = { ...user, ...res.data }
+      localStorage.setItem('cb_user', JSON.stringify(updatedUser))
+      if (onUserUpdate) onUserUpdate(updatedUser)
+      
+    } catch (err) {
+      console.error(err)
+      setError(err?.response?.data?.message || 'Failed to update profile.')
     } finally {
       setLoading(false)
     }
@@ -686,6 +741,9 @@ export default function Dashboard({ user, onLogout }) {
           <button type="button" className={activeTab === TABS.SUPPORT ? 'is-active' : ''} onClick={() => setActiveTab(TABS.SUPPORT)}>
             Support & Help
           </button>
+          <button type="button" className={activeTab === TABS.PROFILE ? 'is-active' : ''} onClick={() => setActiveTab(TABS.PROFILE)}>
+            My Profile
+          </button>
         </section>
 
         {activeTab === TABS.HISTORY ? (
@@ -799,7 +857,213 @@ export default function Dashboard({ user, onLogout }) {
             </div>
           </section>
         ) : null}
+
+        {activeTab === TABS.PROFILE ? (
+          <section className="tab-panel">
+            <div className="profile-card">
+              <div className="profile-header">
+                <div className="profile-avatar">
+                   {user?.photoURL ? (
+                     <img src={user.photoURL} alt="Avatar" />
+                   ) : (
+                     <div className="avatar-placeholder">{user?.name?.[0] || 'U'}</div>
+                   )}
+                </div>
+                <div className="profile-info-header">
+                  <h3>{user?.name}</h3>
+                  <p>{user?.role?.toUpperCase()}</p>
+                </div>
+              </div>
+
+              <form className="profile-form" onSubmit={handleUpdateProfile}>
+                {successMsg && <div className="success-banner">{successMsg}</div>}
+                
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>Full Name</label>
+                    <input 
+                      type="text" 
+                      value={profileData.name} 
+                      onChange={(e) => setProfileData({...profileData, name: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email (Verified)</label>
+                    <input type="text" value={profileData.email} disabled className="disabled-input" />
+                  </div>
+                  <div className="form-group">
+                    <label>Department</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. CSE, IT, Mechanical"
+                      value={profileData.department} 
+                      onChange={(e) => setProfileData({...profileData, department: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Year of Study</label>
+                    <select 
+                      value={profileData.year} 
+                      onChange={(e) => setProfileData({...profileData, year: e.target.value})}
+                    >
+                      <option value="">Select Year</option>
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                      <option value="3rd Year">3rd Year</option>
+                      <option value="4th Year">4th Year</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Phone Number</label>
+                    <input 
+                      type="tel" 
+                      placeholder="Enter 10-digit number"
+                      value={profileData.phone} 
+                      onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-actions">
+                  <button type="submit" className="save-profile-btn" disabled={loading}>
+                    {loading ? 'Saving...' : 'Save Profile Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+        ) : null}
       </main>
+
+      <style>{`
+          .profile-card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            margin-top: 10px;
+          }
+          .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 32px;
+          }
+          .profile-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: #f1f5f9;
+            border: 3px solid #eff6ff;
+          }
+          .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+          .avatar-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: #3b82f6;
+            background: #eff6ff;
+            font-weight: 800;
+          }
+          .profile-info-header h3 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: #0f172a;
+            font-weight: 800;
+          }
+          .profile-info-header p {
+            margin: 4px 0 0;
+            color: #3b82f6;
+            font-weight: 700;
+            font-size: 0.8rem;
+            letter-spacing: 0.05em;
+          }
+          .profile-form .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+          }
+          .profile-form .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+          .profile-form label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #334155;
+            letter-spacing: 0.01em;
+          }
+          .profile-form input, .profile-form select {
+            padding: 12px 16px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+            color: #1e293b;
+            font-weight: 500;
+          }
+          .profile-form input:focus, .profile-form select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+          }
+          .disabled-input {
+            background: #f1f5f9;
+            color: #94a3b8;
+            cursor: not-allowed;
+          }
+          .form-actions {
+            margin-top: 40px;
+            display: flex;
+            justify-content: flex-end;
+          }
+          .save-profile-btn {
+            background: #3b82f6;
+            color: white;
+            padding: 14px 32px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+          }
+          .save-profile-btn:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3);
+          }
+          .save-profile-btn:active {
+            transform: translateY(0);
+          }
+          .success-banner {
+            background: #f0fdf4;
+            color: #166534;
+            padding: 14px 20px;
+            border-radius: 12px;
+            margin-bottom: 28px;
+            font-weight: 700;
+            text-align: center;
+            border: 1px solid #bbf7d0;
+            font-size: 0.95rem;
+          }
+          
+          @media (max-width: 768px) {
+            .profile-form .form-grid {
+              grid-template-columns: 1fr;
+            }
+          }
+        `}</style>
 
       {page === PAGE.SEATS || page === PAGE.CONFIRMATION ? (
         <section className={`seat-modal ${page === PAGE.CONFIRMATION ? 'show-confirmed' : ''}`}>
