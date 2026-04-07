@@ -139,6 +139,7 @@ export default function Dashboard({ user, onLogout }) {
   const [trackerIndex, setTrackerIndex] = useState(0)
   const [bookingHistory, setBookingHistory] = useState([])
   const [firestoreFallbackMode, setFirestoreFallbackMode] = useState(false)
+  const [dynamicNextDeparture, setDynamicNextDeparture] = useState(DEPARTURE_TIMES.BIT1)
 
   const selectedBus = useMemo(() => {
     const mockBuses = {
@@ -192,10 +193,17 @@ export default function Dashboard({ user, onLogout }) {
   }, [sortedBuses, mockBusSeats])
 
   const nextDeparture = useMemo(() => {
-    const firstAvailable = sortedBuses.find((bus) => getBusStatus(bus) !== 'Full')
-    if (!firstAvailable) return DEPARTURE_TIMES.BIT1
-    return DEPARTURE_TIMES[firstAvailable.name] || DEPARTURE_TIMES.BIT1
-  }, [sortedBuses])
+    return dynamicNextDeparture
+  }, [dynamicNextDeparture])
+
+  useEffect(() => {
+    const times = Object.values(DEPARTURE_TIMES)
+    const interval = setInterval(() => {
+      const randomTime = times[Math.floor(Math.random() * times.length)]
+      setDynamicNextDeparture(randomTime)
+    }, 8000) // Change every 8 seconds
+    return () => clearInterval(interval)
+  }, [])
 
   const filteredBuses = useMemo(() => {
     return sortedBuses.filter((bus) => {
