@@ -36,9 +36,10 @@ function App() {
             photoURL: firebaseUser.photoURL
           })
           const { token, user: backendUser } = syncRes.data
+          const normalized = { ...backendUser, uid: backendUser.uid || backendUser._id }
           localStorage.setItem('cb_jwt', token)
-          localStorage.setItem('cb_user', JSON.stringify(backendUser))
-          setUser(backendUser)
+          localStorage.setItem('cb_user', JSON.stringify(normalized))
+          setUser(normalized)
         } catch (err) {
           console.error('Backend sync failed:', err)
           // Fallback to basic firebase info if backend is down

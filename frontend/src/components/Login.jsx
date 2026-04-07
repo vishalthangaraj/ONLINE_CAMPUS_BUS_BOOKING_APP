@@ -16,8 +16,13 @@ export default function Login({ onLogin }) {
   })
 
   const persistLogin = (userData) => {
-    localStorage.setItem('cb_user', JSON.stringify(userData))
-    if (onLogin) onLogin(userData)
+    // Normalize UID if it's missing (backend uses _id)
+    const normalizedUser = {
+      ...userData,
+      uid: userData.uid || userData._id
+    }
+    localStorage.setItem('cb_user', JSON.stringify(normalizedUser))
+    if (onLogin) onLogin(normalizedUser)
   }
 
   const handleGoogleLogin = async () => {

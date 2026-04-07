@@ -282,22 +282,22 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
   }, [firestoreFallbackMode, search.travelDate])
 
   useEffect(() => {
-    if (!user?.uid) return undefined
+    if (!(user?.uid || user?._id)) return undefined
     if (firestoreFallbackMode) {
       const history = readLocalBookings()
-        .filter((item) => item.userId === user.uid)
+        .filter((item) => item.userId === (user?.uid || user?._id))
         .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0))
       setBookingHistory(history)
       return undefined
     }
     const fetchHistory = async () => {
       try {
-        const res = await shimApiService.getUserBookings(user.uid)
+        const res = await shimApiService.getUserBookings(user?.uid || user?._id)
         setBookingHistory(res.data || [])
       } catch (err) { }
     }
     fetchHistory()
-  }, [firestoreFallbackMode, user?.uid, page, activeTab])
+  }, [firestoreFallbackMode, user?.uid, user?._id, page, activeTab])
 
   // Fetch full profile info when activeTab becomes PROFILE
   useEffect(() => {
@@ -363,7 +363,8 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
   }
 
   const handleConfirmBooking = async () => {
-    if (!selectedBus || selectedSeats.length === 0 || !user?.uid) {
+    const userId = user?.uid || user?._id
+    if (!selectedBus || selectedSeats.length === 0 || !userId) {
       setError('Select a bus and at least one seat before confirming the booking.')
       return
     }
@@ -374,7 +375,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
     try {
       const allBookings = [...bookingHistory];
       const hasBookingForSameDay = allBookings.some(
-        booking => booking.travelDate === search.travelDate && booking.userId === user.uid && booking.status !== 'cancelled'
+        booking => booking.travelDate === search.travelDate && booking.userId === (user?.uid || user?._id) && booking.status !== 'cancelled'
       );
 
       if (hasBookingForSameDay) {
@@ -386,7 +387,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
       if (!useLocalFallback && !selectedBus.isMock) {
         try {
           await shimApiService.createBooking({
-            userId: user.uid,
+            userId: user?.uid || user?._id,
             userName: user.name || '',
             email: user.email || '',
             busId: selectedBus.id,
@@ -411,7 +412,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
             selectedSeats: selectedSeats
           })
           await shimApiService.createBooking({
-            userId: user.uid,
+            userId: user?.uid || user?._id,
             userName: user.name || '',
             email: user.email || '',
             busId: selectedBus.id,
@@ -445,7 +446,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
 
         const nextBooking = {
           bookingId: `local-${Date.now()}`,
-          userId: user.uid,
+          userId: user?.uid || user?._id,
           userName: user.name || '',
           email: user.email || '',
           busId: selectedBus.id,
@@ -466,7 +467,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
         writeLocalBookings(updatedLocalBookings)
 
         const mine = updatedLocalBookings
-          .filter((item) => item.userId === user.uid)
+          .filter((item) => item.userId === (user?.uid || user?._id))
           .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0))
         setBookingHistory(mine)
         setError('Firestore API is disabled. Booking saved locally in this browser.')
@@ -499,7 +500,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
     setError('')
     try {
       await shimApiService.cancelBooking(bookingId)
-      const res = await shimApiService.getUserBookings(user.uid)
+      const res = await shimApiService.getUserBookings(user?.uid || user?._id)
       setBookingHistory(res.data || [])
     } catch (err) {
       console.error(err)
