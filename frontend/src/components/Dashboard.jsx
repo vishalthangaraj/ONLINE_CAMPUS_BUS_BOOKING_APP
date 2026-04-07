@@ -451,6 +451,23 @@ export default function Dashboard({ user, onLogout }) {
     }
   }
 
+  const handleCancelBooking = async (bookingId) => {
+    if (!window.confirm('Are you sure you want to cancel this booking?')) return
+    
+    setLoading(true)
+    setError('')
+    try {
+      await shimApiService.cancelBooking(bookingId)
+      const res = await shimApiService.getUserBookings(user.uid)
+      setBookingHistory(res.data || [])
+    } catch (err) {
+      console.error(err)
+      setError(err?.response?.data?.error || 'Cancellation failed.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSearchChange = (field, value) => {
     setSearch((current) => ({ ...current, [field]: value }))
   }
@@ -678,11 +695,12 @@ export default function Dashboard({ user, onLogout }) {
                       <th>Route</th>
                       <th>Seat Number</th>
                       <th>Status</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bookingHistory.map((item) => (
-                      <tr key={item.bookingId}>
+                      <tr key={item._id || item.bookingId}>
                         <td>{normalizeBusNumber(item.busName || item.busId)}</td>
                         <td>{bookingDateText(item.createdAt, item.travelDate)}</td>
                         <td>{item.fromCity} -&gt; {item.toCity}</td>
@@ -692,6 +710,17 @@ export default function Dashboard({ user, onLogout }) {
                             {item.status || 'booked'}
                           </span>
                         </td>
+                        <td>
+                          {(item.status === 'booked' || item.status === 'confirmed') ? (
+                            <button 
+                              className="mini-cancel-btn" 
+                              onClick={() => handleCancelBooking(item._id || item.bookingId)}
+                              disabled={loading}
+                            >
+                              {loading ? '...' : 'Cancel'}
+                            </button>
+                          ) : '-'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -700,6 +729,25 @@ export default function Dashboard({ user, onLogout }) {
             )}
           </section>
         ) : null}
+
+        <style>{`
+          .mini-cancel-btn {
+            background: #ffe4e6;
+            color: #e11d48;
+            border: 1px solid #fecdd3;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .mini-cancel-btn:hover {
+            background: #e11d48;
+            color: #ffffff;
+            border-color: #e11d48;
+          }
+        `}</style>
 
         {activeTab === TABS.SCHEDULE ? (
           <section className="tab-panel">

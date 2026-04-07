@@ -137,5 +137,55 @@ module.exports = (io) => {
     }
   });
 
+  router.post('/bookings/cancel/:bookingId', async (req, res) => {
+    try {
+      const { bookingId } = req.params;
+      const bookingsCol = mongoose.connection.db.collection('shim_bookings');
+      const busesCol = mongoose.connection.db.collection('shim_buses');
+      const mockCol = mongoose.connection.db.collection('shim_mock_state');
+
+      const booking = await bookingsCol.findOne({ _id: bookingId });
+      if (!booking) return res.status(404).json({ error: 'Booking not found' });
+      if (booking.status === 'cancelled') return res.status(400).json({ error: 'Booking already cancelled' });
+
+      // 1. Update Booking Status
+      await bookingsCol.updateOne({ _id: bookingId }, { $set: { status: 'cancelled' } });
+
+      // 2. Remove from Bus Seat Map
+      const bus = await busesCol.findOne({ _id: booking.busId });
+      if (bus && bus.seats) {
+        const updatedSeats = { ...bus.seats };
+        const seatsToRemove = booking.seatNumber.split(', ');
+        seatsToRemove.forEach(s => {
+          if (updatedSeats[s] && updatedSeats[s].bookedBy === booking.userId) {
+            delete updatedSeats[s];
+          }
+        });
+        await busesCol.updateOne({ _id: booking.busId }, { $set: { seats: updatedSeats } });
+      }
+
+      // 3. Remove from Mock State (if exists for that date)
+      const mockDoc = await mockCol.findOne({ _id: booking.travelDate });
+      if (mockDoc && mockDoc.seats && mockDoc.seats[booking.busId]) {
+        const seatsToRemove = booking.seatNumber.split(', ');
+        const currentMockSeats = mockDoc.seats[booking.busId];
+        const updatedMockSeats = currentMockSeats.filter(s => !seatsToRemove.includes(s));
+        
+        const newSeatsObj = { ...mockDoc.seats, [booking.busId]: updatedMockSeats };
+        await mockCol.updateOne({ _id: booking.travelDate }, { $set: { seats: newSeatsObj } });
+        io.emit('mock-state-update', { date: booking.travelDate, seats: newSeatsObj });
+      }
+
+      // 4. Emit Global Update
+      const updatedBuses = await busesCol.find({}).toArray();
+      io.emit('buses-update', updatedBuses);
+
+      res.json({ success: true, message: 'Booking cancelled successfully' });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return router;
 };

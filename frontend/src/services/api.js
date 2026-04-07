@@ -58,7 +58,8 @@ export const shimApiService = {
   getUserBookings: (userId) => axiosInstance.get(`/shim/bookings/user?userId=${userId}`),
   createBooking: (data) => axiosInstance.post('/shim/bookings', data),
   getMockState: (date) => axiosInstance.get(`/shim/mock-state/${date}`),
-  updateMockState: (date, data) => axiosInstance.post(`/shim/mock-state/${date}`, data)
+  updateMockState: (date, data) => axiosInstance.post(`/shim/mock-state/${date}`, data),
+  cancelBooking: (bookingId) => axiosInstance.post(`/shim/bookings/cancel/${bookingId}`)
 }
 
 export default axiosInstance
