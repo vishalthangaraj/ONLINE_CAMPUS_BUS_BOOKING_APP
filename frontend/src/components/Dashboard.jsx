@@ -333,7 +333,7 @@ export default function Dashboard({ user, onLogout }) {
     try {
       const allBookings = [...bookingHistory];
       const hasBookingForSameDay = allBookings.some(
-        booking => booking.travelDate === search.travelDate && booking.userId === user.uid
+        booking => booking.travelDate === search.travelDate && booking.userId === user.uid && booking.status !== 'cancelled'
       );
 
       if (hasBookingForSameDay) {
