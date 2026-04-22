@@ -5,24 +5,36 @@ const { authMiddleware } = require('../middleware/auth');
 module.exports = (io) => {
   const router = express.Router();
 
-  // Initialize buses
+  // Initialize buses with the updated 20 BIT routes
   const initialBuses = [
-    { _id: 'BITNO1', name: 'Bus BITNO1', fromCity: 'Tiruppur', toCity: 'College', route: 'Tiruppur -> College', totalSeats: 45, seats: {} },
-    { _id: 'BITNO2', name: 'Bus BITNO2', fromCity: 'Salem', toCity: 'College', route: 'Salem -> College', totalSeats: 45, seats: {} },
-    { _id: 'BITNO3', name: 'Bus BITNO3', fromCity: 'Erode', toCity: 'College', route: 'Erode -> College', totalSeats: 45, seats: {} },
-    { _id: 'BITNO4', name: 'Bus BITNO4', fromCity: 'Gobi', toCity: 'College', route: 'Gobi -> College', totalSeats: 45, seats: {} },
-    { _id: 'BITNO5', name: 'Bus BITNO5', fromCity: 'Coimbatore', toCity: 'College', route: 'Coimbatore -> College', totalSeats: 45, seats: {} },
-    { _id: 'BITNO6', name: 'Bus BITNO6', fromCity: 'Puliyampatti', toCity: 'College', route: 'Puliyampatti -> College', totalSeats: 45, seats: {} },
+    { _id: 'BIT1', name: 'Bus BIT1', fromCity: 'Somanur', toCity: 'College', route: 'Somanur Bus Stand → Punjai Puliyampatti', totalSeats: 45, seats: {} },
+    { _id: 'BIT2', name: 'Bus BIT2', fromCity: 'S R Nagar', toCity: 'College', route: 'Tiruppur (Kumaran College) Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT3', name: 'Bus BIT3', fromCity: 'Nataraj Theatre', toCity: 'College', route: 'Tiruppur (Old Bus Stand) Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT4', name: 'Bus BIT4', fromCity: 'Perumanallur', toCity: 'College', route: 'Tiruppur (New Bus Stand) Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT5', name: 'Bus BIT5', fromCity: 'Avinashi', toCity: 'College', route: 'Avinashi Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT6', name: 'Bus BIT6', fromCity: 'Kovilpalayam', toCity: 'College', route: 'Saravanampatti / Kovilpalayam / Annur Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT7', name: 'Bus BIT7', fromCity: 'Periyanaickenpalayam', toCity: 'College', route: 'Thudiyalur / Periyanaickenpalayam Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT8', name: 'Bus BIT8', fromCity: 'Mettupalayam', toCity: 'College', route: 'Karamadai Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT9', name: 'Bus BIT9', fromCity: 'Alankombu', toCity: 'College', route: 'Mettupalayam / Sirumugai Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT10', name: 'Bus BIT10', fromCity: 'Chithode', toCity: 'College', route: 'Erode / Chithode / Kavindapadi Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT11', name: 'Bus BIT11', fromCity: 'Thudupathi', toCity: 'College', route: 'Perundurai Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT12', name: 'Bus BIT12', fromCity: 'Komarapalayam', toCity: 'College', route: 'Komarapalayam / Bhavani Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT13', name: 'Bus BIT13', fromCity: 'Gandhi Nagar', toCity: 'College', route: 'Sathyamangalam Town Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT14', name: 'Bus BIT14', fromCity: 'Gobi', toCity: 'College', route: 'Gobichettipalayam Local', totalSeats: 45, seats: {} },
+    { _id: 'BIT15', name: 'Bus BIT15', fromCity: 'Gandhipuram', toCity: 'College', route: 'Coimbatore Expressway', totalSeats: 45, seats: {} },
+    { _id: 'BIT16', name: 'Bus BIT16', fromCity: 'Anthiyur', toCity: 'College', route: 'Anthiyur via Gobi', totalSeats: 45, seats: {} },
+    { _id: 'BIT17', name: 'Bus BIT17', fromCity: 'Kunnathur', toCity: 'College', route: 'Kunnathur Route', totalSeats: 45, seats: {} },
+    { _id: 'BIT18', name: 'Bus BIT18', fromCity: 'Bhavanisagar', toCity: 'College', route: 'Bhavanisagar Shuttle', totalSeats: 45, seats: {} },
+    { _id: 'BIT19', name: 'Bus BIT19', fromCity: 'Sirumugai', toCity: 'College', route: 'Sirumugai Express', totalSeats: 45, seats: {} },
+    { _id: 'BIT20', name: 'Bus BIT20', fromCity: 'Bannari Amman Temple', toCity: 'College', route: 'Bannari Temple Shuttle', totalSeats: 45, seats: {} },
   ];
 
   router.post('/seed', async (req, res) => {
     try {
       const col = mongoose.connection.db.collection('shim_buses');
-      const count = await col.countDocuments();
-      if (count === 0) {
-        await col.insertMany(initialBuses);
-      }
-      res.json({ success: true });
+      await col.deleteMany({}); // Clear existing to ensure update
+      await col.insertMany(initialBuses);
+      res.json({ success: true, count: initialBuses.length });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -53,11 +65,11 @@ module.exports = (io) => {
   router.post('/bookings', async (req, res) => {
     try {
       const { userId, userName, email, busId, busName, route, fromCity, toCity, seatNumber, travelDate, departureTime, status } = req.body;
-      const selectedSeats = seatNumber.split(', ');
+      const selectedSeats = String(seatNumber).split(', ');
 
       const col = mongoose.connection.db.collection('shim_buses');
-      const bus = await col.findOne({ _id: busId });
-      if (!bus) return res.status(404).json({ error: 'Bus not found' });
+      const bus = await col.findOne({ _id: String(busId) });
+      if (!bus) return res.status(404).json({ error: `Bus not found: ${busId}` });
 
       // Check seats
       const seats = bus.seats || {};

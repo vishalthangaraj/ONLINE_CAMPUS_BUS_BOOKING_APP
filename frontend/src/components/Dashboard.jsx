@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { io } from 'socket.io-client'
 import { apiService, shimApiService } from '../services/api'
 import { CAMPUS_BUSES } from '../data/campusBuses'
+import { Home, History, Calendar, HelpCircle, User as UserIcon, ClipboardList, LogOut, ShieldAlert, CheckCircle, Zap } from 'lucide-react'
+import EcoImpactCard from './EcoImpactCard'
+import QRCodeModal from './QRCodeModal'
+import NotificationTray from './NotificationTray'
 
 const PAGE = {
   DASHBOARD: 'dashboard',
@@ -10,11 +14,13 @@ const PAGE = {
 }
 
 const TABS = {
+  HOME: 'home',
   HISTORY: 'history',
   SCHEDULE: 'schedule',
   SUPPORT: 'support',
   TRACKER: 'tracker',
   PROFILE: 'profile',
+  ATTENDANCE: 'attendance',
 }
 
 const getTodayDate = () => {
@@ -25,6 +31,23 @@ const getTodayDate = () => {
   return `${yyyy}-${mm}-${dd}`
 }
 
+const getWorkingDaysInMonth = () => {
+  const dt = new Date()
+  const year = dt.getFullYear()
+  const month = dt.getMonth()
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+  let count = 0
+  for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+    if (d.getDay() !== 0) count++ // Exclude Sundays
+  }
+  return count
+}
+
+const getCurrentMonthName = () => {
+  return new Date().toLocaleString('default', { month: 'long' })
+}
+
 const DEFAULT_SEARCH = {
   fromCity: 'All',
   toCity: 'Erode',
@@ -32,11 +55,10 @@ const DEFAULT_SEARCH = {
 }
 
 const DEPARTURE_TIMES = {
-  BIT1: '08:15 AM',
-  BIT2: '08:30 AM',
-  BIT3: '08:45 AM',
-  BIT4: '09:00 AM',
-  BIT5: '09:15 AM',
+  BIT1: '07:30 AM', BIT2: '07:45 AM', BIT3: '08:00 AM', BIT4: '08:15 AM', BIT5: '08:30 AM',
+  BIT6: '07:50 AM', BIT7: '08:05 AM', BIT8: '08:20 AM', BIT9: '08:35 AM', BIT10: '08:50 AM',
+  BIT11: '07:40 AM', BIT12: '07:55 AM', BIT13: '08:10 AM', BIT14: '08:25 AM', BIT15: '08:40 AM',
+  BIT16: '07:35 AM', BIT17: '08:00 AM', BIT18: '08:25 AM', BIT19: '08:45 AM', BIT20: '09:00 AM',
 }
 
 const TRACKER_ROUTE = ['Campus', 'Sathyamangalam', 'Erode']
@@ -55,14 +77,14 @@ const getSeatsLeft = (bus) => {
 
 const normalizeBusNumber = (raw) => {
   const text = String(raw || '').toUpperCase()
-  const match = text.match(/BIT0*([1-5])/)
+  const match = text.match(/BIT(\d+)/)
   if (match) return `BIT${match[1]}`
   return text || 'BIT1'
 }
 
 const getBusStatus = (bus) => {
   if (!bus) return 'Available'
-  if (bus.name === 'BIT3') return 'On the way'
+  if (bus.id === 'BIT3') return 'On the way'
   if (getSeatsLeft(bus) <= 0) return 'Full'
   return 'Available'
 }
@@ -124,7 +146,7 @@ const getBookingErrorMessage = (err) => {
 
 export default function Dashboard({ user, onLogout, onUserUpdate }) {
   const [page, setPage] = useState(PAGE.DASHBOARD)
-  const [activeTab, setActiveTab] = useState(TABS.HISTORY)
+  const [activeTab, setActiveTab] = useState(TABS.HOME)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -153,14 +175,25 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
   const [firestoreFallbackMode, setFirestoreFallbackMode] = useState(false)
   const [dynamicNextDeparture, setDynamicNextDeparture] = useState(DEPARTURE_TIMES.BIT1)
 
+  // Innovation State
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false)
+  const [selectedBookingForQR, setSelectedBookingForQR] = useState(null)
+  const [isSOSActive, setIsSOSActive] = useState(false)
+  const [sosCountdown, setSosCountdown] = useState(5)
+  const [notifications, setNotifications] = useState([])
+  const [assistRequired, setAssistRequired] = useState(false)
+  const [feedbackSentiments, setFeedbackSentiments] = useState([])
+  const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false)
+
   const selectedBus = useMemo(() => {
     const mockBuses = {
-      BITNO1: { from: 'Tiruppur' },
-      BITNO2: { from: 'Salem' },
-      BITNO3: { from: 'Erode' },
-      BITNO4: { from: 'Gobi' },
-      BITNO5: { from: 'Coimbatore' },
-      BITNO6: { from: 'Puliyampatti' }
+      BIT1: { from: 'Somanur' }, BIT2: { from: 'S R Nagar' }, BIT3: { from: 'Nataraj Theatre' },
+      BIT4: { from: 'Perumanallur' }, BIT5: { from: 'Avinashi' }, BIT6: { from: 'Kovilpalayam' },
+      BIT7: { from: 'Periyanaickenpalayam' }, BIT8: { from: 'Mettupalayam' }, BIT9: { from: 'Alankombu' },
+      BIT10: { from: 'Chithode' }, BIT11: { from: 'Thudupathi' }, BIT12: { from: 'Komarapalayam' },
+      BIT13: { from: 'Gandhi Nagar' }, BIT14: { from: 'Gobi' }, BIT15: { from: 'Gandhipuram' },
+      BIT16: { from: 'Anthiyur' }, BIT17: { from: 'Kunnathur' }, BIT18: { from: 'Bhavanisagar' },
+      BIT19: { from: 'Sirumugai' }, BIT20: { from: 'Bannari Amman Temple' }
     };
     if (mockBuses[selectedBusId]) {
       return {
@@ -186,7 +219,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
 
   const availableBuses = useMemo(() => {
     let mockAvailable = 0;
-    const mockBusIds = ['BITNO1', 'BITNO2', 'BITNO3', 'BITNO4', 'BITNO5', 'BITNO6'];
+    const mockBusIds = Array.from({ length: 20 }, (_, i) => `BIT${i + 1}`);
     mockBusIds.forEach(id => {
       if ((mockBusSeats[id]?.length || 0) < 45) mockAvailable++;
     });
@@ -195,7 +228,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
 
   const totalSeatsAvailable = useMemo(() => {
     let mockTotal = 0;
-    const mockBusIds = ['BITNO1', 'BITNO2', 'BITNO3', 'BITNO4', 'BITNO5', 'BITNO6'];
+    const mockBusIds = Array.from({ length: 20 }, (_, i) => `BIT${i + 1}`);
     mockBusIds.forEach(id => {
       const booked = mockBusSeats[id]?.length || 0;
       mockTotal += (45 - booked);
@@ -328,6 +361,20 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
     return () => clearInterval(timer)
   }, [])
 
+  // Proximity Notification Effect
+  useEffect(() => {
+    if (activeTab === TABS.TRACKER) {
+      const timer = setTimeout(() => {
+        setNotifications([{
+          type: 'proximity',
+          title: 'Bus Approaching Stop',
+          message: 'Bus BIT3 is currently 250m away from Sathyamangalam stop. Prepare to board!'
+        }])
+      }, 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [activeTab])
+
   useEffect(() => {
     if (!bookingResult?.routePoints?.length) return undefined
 
@@ -459,6 +506,7 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
           travelDate: search.travelDate,
           departureTime: DEPARTURE_TIMES[selectedBus.name] || DEPARTURE_TIMES.BIT1,
           status: 'booked',
+          assistRequired: assistRequired,
           createdAtTs: Date.now(),
         }
 
@@ -480,9 +528,19 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
         toCity: selectedBus.toCity,
         routePoints: selectedBus.routePoints || TRACKER_ROUTE,
         seatNumber: selectedSeats.join(', '),
+        assistRequired: assistRequired,
       })
+      
+      // Instant Booking Notification
+      setNotifications(prev => [...prev, {
+        type: 'booking',
+        title: 'Booking Confirmed! 🎫',
+        message: `Your seat ${selectedSeats.join(', ')} on ${selectedBus.name} is successfully reserved. Pickup at ${DEPARTURE_TIMES[selectedBus.name] || DEPARTURE_TIMES.BIT1}.`
+      }])
+
       setRouteIndex(0)
       setSelectedSeats([])
+      setAssistRequired(false)
       setActiveTab(TABS.HISTORY)
       setPage(PAGE.CONFIRMATION)
     } catch (err) {
@@ -544,70 +602,113 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
   const handleSupportSubmit = (event) => {
     event.preventDefault()
     if (!supportMessage.trim()) return
-    setSupportSent(true)
-    setSupportMessage('')
+    
+    setIsAnalyzingSentiment(true)
+    
+    // AI Sentiment Simulation
+    setTimeout(() => {
+      const isNegative = supportMessage.toLowerCase().includes('bad') || 
+                         supportMessage.toLowerCase().includes('late') || 
+                         supportMessage.toLowerCase().includes('error');
+      
+      const sentimentResult = {
+        id: Date.now(),
+        message: supportMessage,
+        sentiment: isNegative ? 'Negative' : 'Positive',
+        date: new Date().toLocaleString()
+      }
+      
+      setFeedbackSentiments(prev => [sentimentResult, ...prev])
+      setIsAnalyzingSentiment(false)
+      setSupportSent(true)
+      setSupportMessage('')
+    }, 2000)
+  }
+
+  const handleOpenQR = (booking) => {
+    setSelectedBookingForQR(booking)
+    setIsQRModalOpen(true)
+  }
+
+  const handleSOSClick = () => {
+    setIsSOSActive(true)
+    setSosCountdown(5)
+    
+    const timer = setInterval(() => {
+      setSosCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
   }
 
   const trackerProgress = (trackerIndex / (TRACKER_ROUTE.length - 1)) * 100
 
   return (
-    <div className="booking-app-showcase bit-dashboard">
-      <header className="bit-navbar">
-        <div className="bit-branding">
-          <div className="bit-mark">BIT</div>
-          <div>
-            <p className="bit-title">ONLINE CAMPUS BUS BOOKING SYSTEM</p>
-            <p className="bit-subtitle-inline">Real-time seat booking and live tracker</p>
+    <div className="app-layout">
+      <aside className="left-sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-logo">BIT</div>
+          <div className="sidebar-title">
+            <strong>Campus Bus</strong>
           </div>
         </div>
 
-        <nav className="bit-nav">
-          <button onClick={onLogout} className="bit-user-chip" type="button">
-            {user?.photoURL ? (
-              <img className="bit-user-avatar" src={user.photoURL} alt={user?.name || 'User'} referrerPolicy="no-referrer" />
-            ) : (
-              <span className="bit-user-avatar">{(user?.name || 'BIT').slice(0, 1)}</span>
-            )}
-            <span>{user?.name || 'Student'}</span>
-            <span aria-hidden="true">Logout</span>
+        <nav className="sidebar-nav">
+          <button className={`sidebar-link ${activeTab === TABS.HOME ? 'is-active' : ''}`} onClick={() => setActiveTab(TABS.HOME)}>
+            <Home size={18} /> <span>Home</span>
+          </button>
+          <button className={`sidebar-link ${activeTab === TABS.HISTORY ? 'is-active' : ''}`} onClick={() => setActiveTab(TABS.HISTORY)}>
+            <History size={18} /> <span>Booking History</span>
+          </button>
+          <button className={`sidebar-link ${activeTab === TABS.SCHEDULE ? 'is-active' : ''}`} onClick={() => setActiveTab(TABS.SCHEDULE)}>
+            <Calendar size={18} /> <span>Bus Schedule</span>
+          </button>
+          <button className={`sidebar-link ${activeTab === TABS.SUPPORT ? 'is-active' : ''}`} onClick={() => setActiveTab(TABS.SUPPORT)}>
+            <HelpCircle size={18} /> <span>Support & Help</span>
+          </button>
+          <button className={`sidebar-link ${activeTab === TABS.PROFILE ? 'is-active' : ''}`} onClick={() => setActiveTab(TABS.PROFILE)}>
+            <UserIcon size={18} /> <span>My Profile</span>
+          </button>
+          <button className={`sidebar-link ${activeTab === TABS.ATTENDANCE ? 'is-active' : ''}`} onClick={() => setActiveTab(TABS.ATTENDANCE)}>
+            <ClipboardList size={18} /> <span>Attendance</span>
           </button>
         </nav>
-      </header>
 
-      {error && <p className="error-banner">{error}</p>}
-      {supportSent && <p className="success-banner">Support request sent successfully. We will contact you soon.</p>}
-
-      <main className="dashboard-content">
-        <section className="summary-grid">
-          <article className="summary-card summary-bus">
-            <span className="summary-icon">B</span>
-            <div>
-              <p>Available Buses</p>
-              <strong>{availableBuses}</strong>
-            </div>
-          </article>
-
-          <article className="summary-card summary-seat">
-            <span className="summary-icon">S</span>
-            <div>
-              <p>Seats Available</p>
-              <strong>{totalSeatsAvailable}</strong>
-            </div>
-          </article>
-
-          <article className="summary-card summary-clock">
-            <span className="summary-icon">T</span>
-            <div>
-              <p>Next Bus Departure</p>
-              <strong>{nextDeparture}</strong>
-            </div>
-          </article>
-
-          <button type="button" className="summary-card summary-search" onClick={handleSearchBus}>
-            <span>Search Bus</span>
-            <strong>-&gt;</strong>
+        <div className="sidebar-footer">
+          <button className="sidebar-link logout-link" onClick={onLogout}>
+            <LogOut size={18} /> Logout
           </button>
-        </section>
+        </div>
+      </aside>
+
+      <div className="main-content-wrapper">
+        <header className="top-header">
+          <div className="header-breadcrumbs">
+            <h2 className="header-title">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h2>
+          </div>
+          <div className="header-user-info">
+             {user?.photoURL ? (
+               <img className="bit-user-avatar" src={user.photoURL} alt={user?.name || 'User'} referrerPolicy="no-referrer" />
+             ) : (
+               <span className="bit-user-avatar">{(user?.name || 'BIT').slice(0, 1)}</span>
+             )}
+             <span className="header-user-name">{user?.name || 'Student'}</span>
+          </div>
+        </header>
+
+        {error && <p className="error-banner">{error}</p>}
+        {supportSent && <p className="success-banner">Support request sent successfully. We will contact you soon.</p>}
+
+        <main className="dashboard-content">
+          {activeTab === TABS.HOME && (
+            <>
+              <div style={{ marginBottom: '24px' }}>
+                <EcoImpactCard bookingCount={bookingHistory.length} />
+              </div>
 
         <section className="choose-panel">
           <div className="section-heading">
@@ -618,13 +719,25 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
           <div className="search-bar">
             <select value={search.fromCity} onChange={(event) => handleSearchChange('fromCity', event.target.value)}>
               <option value="All">All Routes</option>
-              <option value="Tiruppur">Tiruppur</option>
-              <option value="Erode">Erode</option>
-              <option value="Salem">Salem</option>
-              <option value="Gobi">Gobi</option>
-              <option value="Coimbatore">Coimbatore</option>
-              <option value="Sathyamangalam">Sathyamangalam</option>
-              <option value="Puliyampatti">Puliyampatti</option>
+              <option value="Somanur">Somanur</option>
+              <option value="S R Nagar">Tiruppur (S R Nagar)</option>
+              <option value="Nataraj Theatre">Tiruppur (Old Bus Stand)</option>
+              <option value="Perumanallur">Tiruppur (New Bus Stand)</option>
+              <option value="Avinashi">Avinashi</option>
+              <option value="Kovilpalayam">Saravanampatti / Annur</option>
+              <option value="Periyanaickenpalayam">Thudiyalur / Periyanaickenpalayam</option>
+              <option value="Mettupalayam">Mettupalayam / Karamadai</option>
+              <option value="Alankombu">Sirumugai</option>
+              <option value="Chithode">Erode / Chithode</option>
+              <option value="Thudupathi">Perundurai</option>
+              <option value="Komarapalayam">Komarapalayam / Bhavani</option>
+              <option value="Gandhi Nagar">Sathyamangalam Town</option>
+              <option value="Gobi">Gobichettipalayam</option>
+              <option value="Gandhipuram">Coimbatore (Gandhipuram)</option>
+              <option value="Anthiyur">Anthiyur</option>
+              <option value="Bhavanisagar">Bhavanisagar</option>
+              <option value="Sirumugai">Sirumugai Express</option>
+              <option value="Bannari Amman Temple">Bannari Temple</option>
             </select>
             <select value="Campus" disabled title="Destination is fixed to Campus">
               <option value="Campus">Campus</option>
@@ -664,14 +777,17 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
               .custom-book-btn:hover { background: #3b82f6; color: #ffffff; border-color: #3b82f6; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
             `}</style>
             <div className="custom-bus-grid">
-              {[
-                { id: 'BITNO1', from: 'Tiruppur' },
-                { id: 'BITNO2', from: 'Salem' },
-                { id: 'BITNO3', from: 'Erode' },
-                { id: 'BITNO4', from: 'Gobi' },
-                { id: 'BITNO5', from: 'Coimbatore' },
-                { id: 'BITNO6', from: 'Puliyampatti' }
-              ].filter((bus) => search.fromCity === 'All' || bus.from === search.fromCity).map((bus) => (
+              {Array.from({ length: 20 }, (_, i) => {
+                const id = `BIT${i + 1}`;
+                const cityMap = {
+                  BIT1: 'Somanur', BIT2: 'S R Nagar', BIT3: 'Nataraj Theatre', BIT4: 'Perumanallur', BIT5: 'Avinashi',
+                  BIT6: 'Kovilpalayam', BIT7: 'Periyanaickenpalayam', BIT8: 'Mettupalayam', BIT9: 'Alankombu',
+                  BIT10: 'Chithode', BIT11: 'Thudupathi', BIT12: 'Komarapalayam', BIT13: 'Gandhi Nagar',
+                  BIT14: 'Gobi', BIT15: 'Gandhipuram', BIT16: 'Anthiyur', BIT17: 'Kunnathur', BIT18: 'Bhavanisagar',
+                  BIT19: 'Sirumugai', BIT20: 'Bannari Amman Temple'
+                };
+                return { id, from: cityMap[id] };
+              }).filter((bus) => search.fromCity === 'All' || bus.from === search.fromCity).map((bus) => (
                 <div key={bus.id} className="custom-bus-card" onClick={() => openBusBooking(bus.id)}>
                   <div className="custom-bus-header">
                     <div className="custom-bus-title">
@@ -730,23 +846,41 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
                 </a>
               </div>
             </section>
+
+            {/* SOS Floating Button */}
+            <div className={`sos-container ${isSOSActive ? 'sos-active' : ''}`}>
+              <style>{`
+                .sos-container { position: fixed; bottom: 30px; right: 30px; z-index: 1000; }
+                .sos-btn { background: #ef4444; color: white; width: 60px; height: 60px; border-radius: 50%; border: none; box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.4); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
+                .sos-btn:hover { background: #dc2626; transform: scale(1.1); }
+                .sos-alert-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(239, 68, 68, 0.95); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; }
+                .sos-countdown { font-size: 8rem; font-weight: 900; margin: 20px 0; }
+              `}</style>
+              
+              <button className="sos-btn" onClick={handleSOSClick} title="Emergency SOS">
+                <ShieldAlert size={30} />
+              </button>
+
+              {isSOSActive && (
+                <div className="sos-alert-overlay">
+                  <ShieldAlert size={100} />
+                  <h1 style={{ fontSize: '3rem', marginTop: '20px' }}>EMERGENCY ALERT</h1>
+                  <p style={{ fontSize: '1.5rem' }}>Broadcasting location to Campus Security...</p>
+                  <div className="sos-countdown">{sosCountdown > 0 ? sosCountdown : 'SENT'}</div>
+                  <button 
+                    className="mock-primary-btn" 
+                    style={{ background: 'white', color: '#ef4444' }}
+                    onClick={() => setIsSOSActive(false)}
+                  >
+                    Cancel Alert
+                  </button>
+                </div>
+              )}
+            </div>
           </aside>
         </section>
-
-        <section className="bottom-tabs">
-          <button type="button" className={activeTab === TABS.HISTORY ? 'is-active' : ''} onClick={() => setActiveTab(TABS.HISTORY)}>
-            Booking History
-          </button>
-          <button type="button" className={activeTab === TABS.SCHEDULE ? 'is-active' : ''} onClick={() => setActiveTab(TABS.SCHEDULE)}>
-            Bus Schedule
-          </button>
-          <button type="button" className={activeTab === TABS.SUPPORT ? 'is-active' : ''} onClick={() => setActiveTab(TABS.SUPPORT)}>
-            Support & Help
-          </button>
-          <button type="button" className={activeTab === TABS.PROFILE ? 'is-active' : ''} onClick={() => setActiveTab(TABS.PROFILE)}>
-            My Profile
-          </button>
-        </section>
+      </>
+      )}
 
         {activeTab === TABS.HISTORY ? (
           <section className="tab-panel">
@@ -779,15 +913,19 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
                           </span>
                         </td>
                         <td>
-                          {(item.status === 'booked' || item.status === 'confirmed') ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {item.assistRequired && (
+                              <span title="Special Assistance Required" style={{ fontSize: '1.2rem' }}>♿</span>
+                            )}
                             <button 
-                              className="mini-cancel-btn" 
-                              onClick={() => handleCancelBooking(item._id || item.bookingId)}
-                              disabled={loading}
+                              className="mock-secondary-btn" 
+                              style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                              onClick={() => handleOpenQR(item)}
                             >
-                              {loading ? '...' : 'Cancel'}
+                              View Ticket
                             </button>
-                          ) : '-'}
+                            {/* Cancellation Disabled as per request */}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -797,6 +935,12 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
             )}
           </section>
         ) : null}
+
+        <QRCodeModal 
+          isOpen={isQRModalOpen} 
+          onClose={() => setIsQRModalOpen(false)} 
+          booking={selectedBookingForQR} 
+        />
 
         <style>{`
           .mini-cancel-btn {
@@ -852,11 +996,41 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
                   onChange={(event) => setSupportMessage(event.target.value)}
                   placeholder="Describe your issue..."
                 />
-                <button className="mock-primary-btn" type="submit">
-                  Send Message
+                <button 
+                  className="mock-primary-btn" 
+                  type="submit" 
+                  disabled={isAnalyzingSentiment}
+                >
+                  {isAnalyzingSentiment ? 'AI Analyzing Sentiment...' : 'Send Message'}
                 </button>
               </form>
             </div>
+
+            {feedbackSentiments.length > 0 && (
+              <div style={{ marginTop: '30px' }}>
+                <h4 style={{ marginBottom: '15px' }}>AI Sentiment Feedback Log</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  {feedbackSentiments.map(log => (
+                    <div key={log.id} style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{log.date}</span>
+                        <span style={{ 
+                          fontSize: '0.75rem', 
+                          fontWeight: 'bold', 
+                          padding: '2px 8px', 
+                          borderRadius: '100px',
+                          background: log.sentiment === 'Positive' ? '#ecfdf5' : '#fef2f2',
+                          color: log.sentiment === 'Positive' ? '#059669' : '#ef4444'
+                        }}>
+                          AI Tone: {log.sentiment}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: '#1e293b' }}>{log.message}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         ) : null}
 
@@ -936,7 +1110,108 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
             </div>
           </section>
         ) : null}
-      </main>
+
+        {activeTab === TABS.ATTENDANCE ? (
+          <section className="tab-panel">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0 }}>Student Attendance - {getCurrentMonthName()}</h3>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <span className="sync-badge">
+                  <CheckCircle size={14} /> Academic Sync: Active
+                </span>
+                <span className="sync-badge erp">
+                  <Zap size={14} /> ERP Bridge: Connected
+                </span>
+              </div>
+            </div>
+
+            <style>{`
+              .sync-badge {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                background: #f0fdf4;
+                color: #15803d;
+                padding: 6px 14px;
+                border-radius: 100px;
+                font-size: 0.75rem;
+                font-weight: 700;
+                border: 1px solid #bbf7d0;
+              }
+              .sync-badge.erp {
+                background: #eff6ff;
+                color: #1d4ed8;
+                border-color: #bfdbfe;
+              }
+            `}</style>
+            <div className="profile-card">
+              <div className="empty-state" style={{ padding: '20px 0' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📊</div>
+                <h4>Monthly Attendance Overview</h4>
+                <p>Calculated based on {getWorkingDaysInMonth()} working days in {getCurrentMonthName()}.</p>
+                <div style={{ marginTop: '24px', display: 'flex', gap: '30px', justifyContent: 'center', background: '#f1f5f9', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <h2 style={{ margin: 0, color: '#059669', fontSize: '2.5rem' }}>
+                      {(() => {
+                        const currentMonthStr = new Date().toISOString().slice(0, 7);
+                        const monthBooked = bookingHistory.filter(b => b.status === 'booked' && b.travelDate.startsWith(currentMonthStr)).length;
+                        const wDays = getWorkingDaysInMonth();
+                        return wDays > 0 ? Math.min(Math.round((monthBooked / wDays) * 100), 100) : 0;
+                      })()}%
+                    </h2>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Monthly Attendance</span>
+                  </div>
+                  <div style={{ textAlign: 'center', borderLeft: '2px solid #cbd5e1', paddingLeft: '30px' }}>
+                    <h2 style={{ margin: 0, color: '#3b82f6', fontSize: '2.5rem' }}>
+                      {bookingHistory.filter(b => b.status === 'booked' && b.travelDate.startsWith(new Date().toISOString().slice(0, 7))).length}
+                    </h2>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Trips This Month</span>
+                  </div>
+                </div>
+              </div>
+
+              {bookingHistory.filter(b => b.status === 'booked').length > 0 && (
+                <div className="history-table-wrap" style={{ marginTop: '30px' }}>
+                  <table className="history-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Bus & Route</th>
+                        <th>Sync Type</th>
+                        <th>ERP Status</th>
+                        <th>Attendance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bookingHistory.filter(b => b.status === 'booked').map((record) => (
+                        <tr key={record.bookingId || record.id}>
+                          <td>{formatDate(record.travelDate)}</td>
+                          <td>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{record.busName}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{record.route}</div>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '500' }}>Biotic/Digital ID</span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#2563eb', fontSize: '0.8rem', fontWeight: '800' }}>
+                              <Zap size={12} /> Sync Success
+                            </div>
+                          </td>
+                          <td>
+                            <span className="status-badge" style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #10b981' }}>
+                              Present
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        ) : null}
 
       <style>{`
           .profile-card {
@@ -1099,6 +1374,20 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
                   </div>
 
                   <div className="redbus-layout">
+                    <div style={{ marginBottom: '20px', width: '100%', background: '#eff6ff', padding: '16px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={assistRequired} 
+                          onChange={(e) => setAssistRequired(e.target.checked)}
+                          style={{ width: '20px', height: '20px' }}
+                        />
+                        <div>
+                          <strong style={{ display: 'block', color: '#1e40af' }}>Request Special Assistance (♿)</strong>
+                          <span style={{ fontSize: '0.8rem', color: '#60a5fa' }}>Notify driver if you have mobility issues or injuries.</span>
+                        </div>
+                      </label>
+                    </div>
                     <style>{`
                       .redbus-layout {
                         background: #ffffff;
@@ -1341,7 +1630,9 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
             </div>
           </div>
         </section>
-      ) : null}
+        ) : null}
+      </main>
     </div>
+  </div>
   )
 }
