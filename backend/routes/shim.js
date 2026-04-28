@@ -85,6 +85,13 @@ module.exports = (io) => {
 
       await col.updateOne({ _id: busId }, { $set: { seats } });
 
+      const cancellationsToday = await mongoose.connection.db.collection('shim_bookings').countDocuments({
+        userId,
+        travelDate,
+        status: 'cancelled'
+      });
+      const cancelDisabled = cancellationsToday >= 2;
+
       const newBooking = {
         _id: `booking-${Date.now()}`,
         userId,
@@ -99,6 +106,8 @@ module.exports = (io) => {
         travelDate,
         departureTime,
         status,
+        cancelDisabled,
+        cancellationSequence: cancellationsToday,
         createdAtTs: Date.now()
       };
 
@@ -160,6 +169,21 @@ module.exports = (io) => {
       if (!booking) return res.status(404).json({ error: 'Booking not found' });
       if (booking.status === 'cancelled') return res.status(400).json({ error: 'Booking already cancelled' });
 
+      if (booking.cancelDisabled) {
+        return res.status(403).json({ error: 'Cancel option disabled permanently' });
+      }
+
+      // Count cancellations for this day
+      const cancellationsToday = await bookingsCol.countDocuments({
+        userId: booking.userId,
+        travelDate: booking.travelDate,
+        status: 'cancelled'
+      });
+
+      if (cancellationsToday >= 2) {
+        return res.status(403).json({ error: 'Cancel option disabled permanently' });
+      }
+
       // 1. Update Booking Status
       await bookingsCol.updateOne({ _id: bookingId }, { $set: { status: 'cancelled' } });
 
@@ -192,7 +216,11 @@ module.exports = (io) => {
       const updatedBuses = await busesCol.find({}).toArray();
       io.emit('buses-update', updatedBuses);
 
-      res.json({ success: true, message: 'Booking cancelled successfully' });
+      let message = 'Booking cancelled successfully';
+      if (cancellationsToday === 0) message = 'First cancellation used';
+      else if (cancellationsToday === 1) message = 'Second cancellation completed';
+
+      res.json({ success: true, message });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: err.message });

@@ -111,25 +111,36 @@ module.exports = (io) => {
       const confirmedSeatNumbers = [];
       const waitlistedSeatNumbers = [];
 
-      for (const seat of confirmSeats) {
-        await Booking.create({
+        const cancellationsToday = await Booking.countDocuments({
           user: userId,
-          trip: tripId,
-          seatNumber: seat,
-          status: 'confirmed',
+          trip: { $in: tripIdsSameDay },
+          status: 'cancelled',
         });
-        confirmedSeatNumbers.push(seat);
-      }
+        const cancelDisabled = cancellationsToday >= 2;
 
-      for (const seat of waitlistSeats) {
-        await Booking.create({
-          user: userId,
-          trip: tripId,
-          seatNumber: seat,
-          status: 'waitlisted',
-        });
-        waitlistedSeatNumbers.push(seat);
-      }
+        for (const seat of confirmSeats) {
+          await Booking.create({
+            user: userId,
+            trip: tripId,
+            seatNumber: seat,
+            status: 'confirmed',
+            cancelDisabled,
+            cancellationSequence: cancellationsToday,
+          });
+          confirmedSeatNumbers.push(seat);
+        }
+
+        for (const seat of waitlistSeats) {
+          await Booking.create({
+            user: userId,
+            trip: tripId,
+            seatNumber: seat,
+            status: 'waitlisted',
+            cancelDisabled,
+            cancellationSequence: cancellationsToday,
+          });
+          waitlistedSeatNumbers.push(seat);
+        }
 
       trip.bookedCount += confirmedSeatNumbers.length;
       await trip.save();
@@ -209,16 +220,38 @@ module.exports = (io) => {
         return res.status(400).json({ message: 'Booking already cancelled' });
       }
 
+      if (booking.cancelDisabled) {
+        return res.status(403).json({ message: 'Cancel option disabled permanently' });
+      }
+
+      const trip = await Trip.findById(booking.trip);
+      if (!trip) return res.status(404).json({ message: 'Trip not found' });
+
+      // Count cancellations for this day
+      const tripDayStart = startOfDay(trip.startTime);
+      const tripDayEnd = new Date(tripDayStart.getTime() + 24 * 60 * 60 * 1000);
+      const tripsSameDay = await Trip.find({
+        startTime: { $gte: tripDayStart, $lt: tripDayEnd },
+      }).select('_id');
+      const tripIdsSameDay = tripsSameDay.map((t) => t._id);
+
+      const cancellationsToday = await Booking.countDocuments({
+        user: booking.user,
+        trip: { $in: tripIdsSameDay },
+        status: 'cancelled',
+      });
+
+      if (cancellationsToday >= 2) {
+        return res.status(403).json({ message: 'Cancel option disabled permanently' });
+      }
+
       booking.status = 'cancelled';
       await booking.save();
 
       // Update trip booked count
-      if (booking.status === 'confirmed') {
-        const trip = await Trip.findById(booking.trip);
-        if (trip && trip.bookedCount > 0) {
-          trip.bookedCount -= 1;
-          await trip.save();
-        }
+      if (trip && trip.bookedCount > 0) {
+        trip.bookedCount -= 1;
+        await trip.save();
       }
 
       io.to(`trip:${booking.trip}`).emit('seatUpdate', {
@@ -226,7 +259,11 @@ module.exports = (io) => {
         cancelledSeats: [booking.seatNumber],
       });
 
-      res.json({ message: 'Booking cancelled', booking });
+      let message = 'Booking cancelled';
+      if (cancellationsToday === 0) message = 'First cancellation used';
+      else if (cancellationsToday === 1) message = 'Second cancellation completed';
+
+      res.json({ message, booking });
     } catch (err) {
       console.error(err);
       res.status(500).json({ message: 'Failed to cancel booking' });

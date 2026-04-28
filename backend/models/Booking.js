@@ -21,6 +21,8 @@ const bookingSchema = new mongoose.Schema(
       enum: ['confirmed', 'waitlisted', 'cancelled'],
       default: 'confirmed',
     },
+    cancelDisabled: { type: Boolean, default: false },
+    cancellationSequence: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

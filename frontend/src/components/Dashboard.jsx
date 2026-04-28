@@ -557,12 +557,15 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
     setLoading(true)
     setError('')
     try {
-      await shimApiService.cancelBooking(bookingId)
+      const response = await shimApiService.cancelBooking(bookingId)
+      setSuccessMsg(response.data.message || 'Booking cancelled successfully')
+      setTimeout(() => setSuccessMsg(''), 5000)
+      
       const res = await shimApiService.getUserBookings(user?.uid || user?._id)
       setBookingHistory(res.data || [])
     } catch (err) {
       console.error(err)
-      setError(err?.response?.data?.error || 'Cancellation failed.')
+      setError(err?.response?.data?.error || err?.response?.data?.message || 'Cancellation failed.')
     } finally {
       setLoading(false)
     }
@@ -924,7 +927,20 @@ export default function Dashboard({ user, onLogout, onUserUpdate }) {
                             >
                               View Ticket
                             </button>
-                            {/* Cancellation Disabled as per request */}
+                            {item.status !== 'cancelled' && (
+                              item.cancelDisabled ? (
+                                <span style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', background: '#fef2f2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                                   Cancel Disabled Permanently
+                                </span>
+                              ) : (
+                                <button 
+                                  className="mini-cancel-btn"
+                                  onClick={() => handleCancelBooking(item._id || item.bookingId)}
+                                >
+                                  Cancel
+                                </button>
+                              )
+                            )}
                           </div>
                         </td>
                       </tr>
